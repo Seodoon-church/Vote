@@ -56,6 +56,8 @@ export interface Election {
 
 export interface RoundResult {
   total_ballots: number
+  /** 직분별 총 투표수 — 피택 기준 분모 (규정 제14조①) */
+  ballots_by_position?: Partial<Record<PositionType, number>>
   counted_at: Timestamp
   /** 직분·성별 몫별 피택자 candidate id 목록 */
   elected: Partial<Record<PositionType, Partial<Record<Gender, string[]>>>>
@@ -137,27 +139,38 @@ export interface AuditLog {
 // churches/{churchId}/settings/electionRules — 테넌트별 규정 설정
 // ------------------------------------------------------------
 
+/** 후보 전제 봉사 경로 — 규정 제4조: "집사로 5년 이상 또는 협동안수집사로 3년 이상" 등 복수 경로 */
+export interface ServicePath {
+  /** position 또는 detailed_position이 목록에 있으면 이 경로에 해당 */
+  positions: string[]
+  minYears: number
+}
+
 export interface PositionRule {
   /** 'all'이면 남녀 모두 후보 가능 (장로 기본값) */
   gender: Gender | 'all'
   minAge: number
+  /** 규정(제4조)에는 상한 없음 — 시무 정년(만 70세) 고려한 운영값. 당회 확인 대상 */
   maxAge: number
   minBaptismYears: number
-  minServiceYears: number
-  minAttendanceRate: number // 0~1
-  minTitheRate: number // 0~1
-  /** 후보 전제 현재 직분 — position 또는 detailed_position이 목록에 있으면 충족 */
-  eligibleCurrentPositions: string[]
+  minAttendanceRate: number // 0~1 (제8조③1: 최근 2년 주일성수 70%)
+  minTitheRate: number // 0~1 (제8조③2: 최근 2년 십일조 70%)
+  /** 후보 전제 직분·봉사 경로 (제4조) — 하나라도 충족하면 됨 */
+  servicePaths: ServicePath[]
   threshold: ElectionThreshold
 }
 
 export interface VoterRule {
   minAge: number
   requireBaptism: boolean
+  /**
+   * 등록 후 최소 출석 개월 — 규정(제3조)에는 없는 운영값(기본 0).
+   * 제3조② "떠난 지 6개월 이상 미보고자 배제"는 memberClassification(서둔출석성도)으로 갈음
+   */
   minAttendanceMonths: number
   /** 선거인 대상 교인 분류 (members.member_classification) — 빈 값이면 제한 없음 */
   memberClassification?: string
-  /** 치리 중인 교인 배제 */
+  /** 치리 중인 교인 배제 (제3조②) */
   excludeUnderDiscipline: boolean
 }
 
@@ -166,48 +179,60 @@ export interface ElectionRules {
   positions: Record<PositionType, PositionRule>
 }
 
-/** 서둔교회 기본 규정 — 교회별 settings/electionRules로 오버라이드 */
+/**
+ * 서둔교회 기본 규정 — 항존직선거규정(2024-02-04 개정) 제3·4·9조 기준.
+ * 교회별 settings/electionRules로 오버라이드
+ */
 export const DEFAULT_ELECTION_RULES: ElectionRules = {
   voter: {
-    minAge: 18,
+    minAge: 18, // 제3조① 18세 이상 무흠 세례교인(입교인)
     requireBaptism: true,
-    minAttendanceMonths: 6,
+    minAttendanceMonths: 0, // 규정에 등록기간 요건 없음 (제3조②는 분류로 갈음)
     memberClassification: '서둔출석성도',
     excludeUnderDiscipline: true,
   },
   positions: {
     elder: {
-      gender: 'all', // 여성장로 허용 — 정원 배분은 Election.positions에서 설정
+      // 제4조① — 성별 제한 없음. 여성장로 20% 정원 배분은 Election.positions에서 설정
+      gender: 'all',
       minAge: 40,
       maxAge: 70,
       minBaptismYears: 7,
-      minServiceYears: 5,
       minAttendanceRate: 0.7,
       minTitheRate: 0.7,
-      eligibleCurrentPositions: ['안수집사', '협동안수집사', '시무권사', '협동권사'],
-      threshold: { numerator: 2, denominator: 3, inclusive: true }, // 2/3 이상
+      // 제4조①: 안수집사·권사·협동장로·협동권사로 5년 이상 봉사
+      servicePaths: [
+        { positions: ['안수집사', '권사', '시무권사', '협동장로', '협동권사'], minYears: 5 },
+      ],
+      threshold: { numerator: 2, denominator: 3, inclusive: true }, // 제9조① 2/3 이상
     },
     deacon: {
-      gender: 'male',
+      gender: 'male', // 제4조② 남자
       minAge: 35,
       maxAge: 70,
       minBaptismYears: 5,
-      minServiceYears: 5,
       minAttendanceRate: 0.7,
       minTitheRate: 0.7,
-      eligibleCurrentPositions: ['집사'],
-      threshold: { numerator: 1, denominator: 2, inclusive: false }, // 과반(초과)
+      // 제4조②: 집사 5년 이상 또는 협동안수집사 3년 이상
+      servicePaths: [
+        { positions: ['집사'], minYears: 5 },
+        { positions: ['협동안수집사'], minYears: 3 },
+      ],
+      threshold: { numerator: 1, denominator: 2, inclusive: false }, // 제9조② 과반
     },
     kwansa: {
-      gender: 'female',
+      gender: 'female', // 제4조③ 여자
       minAge: 35,
       maxAge: 70,
       minBaptismYears: 5,
-      minServiceYears: 5,
       minAttendanceRate: 0.7,
       minTitheRate: 0.7,
-      eligibleCurrentPositions: ['집사'],
-      threshold: { numerator: 1, denominator: 2, inclusive: false }, // 과반(초과)
+      // 제4조③: 집사 5년 이상 또는 협동권사 3년 이상
+      servicePaths: [
+        { positions: ['집사'], minYears: 5 },
+        { positions: ['협동권사'], minYears: 3 },
+      ],
+      threshold: { numerator: 1, denominator: 2, inclusive: false }, // 제9조② 과반
     },
   },
 }

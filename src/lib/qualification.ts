@@ -27,6 +27,8 @@ export interface MemberRecord {
   service_years?: number
   attendance_rate?: number // 0~1 (없으면 확인 불가 처리)
   tithe_rate?: number // 0~1
+  nationality?: string // 제4조④ 대한민국 국적자만 피선거권
+  is_paid_staff?: boolean // 제4조④ 교회 유급 직원 피선거권 없음
 }
 
 export interface QualificationResult {
@@ -88,12 +90,12 @@ export function calcBaptismYears(member: MemberRecord, today: Date): number | nu
   return null
 }
 
-/** 기존 항존직 여부 — 공천투표 참여 자격 판정용 */
+/** 기존 항존직 여부 — 공천투표 참여 자격 판정용 (제8조①: 은퇴 항존직 포함) */
 export function resolveVoterType(member: MemberRecord): VoterQualificationResult['voterType'] {
   const detailed = member.detailed_position || ''
-  if (['담임목사', '부목사', '시무장로', '은퇴장로'].includes(detailed)) return 'elder'
-  if (['안수집사', '협동안수집사'].includes(detailed)) return 'deacon'
-  if (['시무권사', '협동권사'].includes(detailed)) return 'kwansa'
+  if (['담임목사', '부목사', '시무장로', '은퇴장로', '협동장로'].includes(detailed)) return 'elder'
+  if (['안수집사', '협동안수집사', '은퇴안수집사'].includes(detailed)) return 'deacon'
+  if (['시무권사', '협동권사', '은퇴권사'].includes(detailed)) return 'kwansa'
   return 'member'
 }
 
@@ -127,15 +129,17 @@ export function assessVoter(
     reasons.push('세례일 미등록 (세례교인 확인 필요)')
   }
 
-  // 4. 등록(출석) 기간
-  const regDate = parseMemberDate(member.registration_date)
-  if (regDate) {
-    const months = monthsBetween(regDate, today)
-    if (months < rule.minAttendanceMonths) {
-      reasons.push(`출석 ${rule.minAttendanceMonths}개월 미만 (${months}개월)`)
+  // 4. 등록(출석) 기간 — 규칙이 0이면 판정하지 않음 (규정 제3조에는 없는 운영값)
+  if (rule.minAttendanceMonths > 0) {
+    const regDate = parseMemberDate(member.registration_date)
+    if (regDate) {
+      const months = monthsBetween(regDate, today)
+      if (months < rule.minAttendanceMonths) {
+        reasons.push(`출석 ${rule.minAttendanceMonths}개월 미만 (${months}개월)`)
+      }
+    } else {
+      warnings.push('등록일 미등록 — 출석 기간 확인 불가')
     }
-  } else {
-    warnings.push('등록일 미등록 — 출석 기간 확인 불가')
   }
 
   // 5. 치리 중
@@ -201,22 +205,36 @@ export function assessCandidate(
     reasons.push(`세례 ${rule.minBaptismYears}년 미만 (${baptismYears}년)`)
   }
 
-  // 4. 봉사연수
-  if (member.service_years === undefined) {
-    warnings.push(`봉사연수 확인 불가 (기준 ${rule.minServiceYears}년)`)
-  } else if (member.service_years < rule.minServiceYears) {
-    reasons.push(`봉사 ${rule.minServiceYears}년 미만 (${member.service_years}년)`)
-  }
-
-  // 5. 현재 직분 전제 (장로 후보=안수집사·권사군, 집사군 등)
-  if (rule.eligibleCurrentPositions.length > 0) {
-    const current = [member.position || '', member.detailed_position || '']
-    if (!rule.eligibleCurrentPositions.some((p) => current.includes(p))) {
-      reasons.push(`후보 전제 직분 아님 (${rule.eligibleCurrentPositions.join('/')})`)
+  // 4. 전제 직분·봉사 경로 (제4조 — 복수 경로 중 하나 충족)
+  //    예: 안수집사 후보 = 집사 5년 이상 또는 협동안수집사 3년 이상
+  const current = [member.position || '', member.detailed_position || '']
+  const matchedPaths = rule.servicePaths.filter((path) =>
+    path.positions.some((p) => current.includes(p))
+  )
+  if (rule.servicePaths.length > 0 && matchedPaths.length === 0) {
+    const allPositions = rule.servicePaths.flatMap((p) => p.positions)
+    reasons.push(`후보 전제 직분 아님 (${allPositions.join('/')})`)
+  } else if (matchedPaths.length > 0) {
+    const minYears = Math.min(...matchedPaths.map((p) => p.minYears))
+    if (member.service_years === undefined) {
+      warnings.push(`봉사연수 확인 불가 (기준 ${minYears}년)`)
+    } else if (member.service_years < minYears) {
+      reasons.push(`봉사 ${minYears}년 미만 (${member.service_years}년)`)
     }
   }
 
-  // 6. 출석률·헌금률 — 데이터 있으면 판정, 없으면 확인 불가
+  // 5. 국적·유급 직원 (제4조④) — 데이터 없으면 수동 확인 대상
+  if (member.nationality !== undefined && member.nationality !== '대한민국') {
+    reasons.push('대한민국 국적 아님 (제4조④)')
+  }
+  if (member.is_paid_staff === true) {
+    reasons.push('교회 유급 직원 (제4조④)')
+  }
+  if (member.nationality === undefined || member.is_paid_staff === undefined) {
+    warnings.push('국적·유급직원 여부 수동 확인 필요 (제4조④)')
+  }
+
+  // 6. 출석률·헌금률 (제8조③ 최근 2년) — 데이터 있으면 판정, 없으면 확인 불가
   if (member.attendance_rate === undefined) {
     warnings.push(`출석률 확인 불가 (기준 ${rule.minAttendanceRate * 100}%)`)
   } else if (member.attendance_rate < rule.minAttendanceRate) {

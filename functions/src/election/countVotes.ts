@@ -10,7 +10,7 @@ import {
   writeAudit,
 } from './helpers'
 import type { BallotLike, CandidateLike } from './tally'
-import { determineElected, tallyBallots } from './tally'
+import { countBallotsByPosition, determineElected, tallyBallots } from './tally'
 import type { Gender, PositionQuota, PositionType, VoteRound } from './types'
 import {
   CANDIDATE_STATUS_FOR_ROUND,
@@ -68,6 +68,7 @@ export const countVotes = onCall({ region: REGION }, async (request) => {
   }
 
   let outcome = null
+  let secondRoundOptional: boolean | null = null
   if (round !== 'nomination') {
     // 이번 라운드 투표 대상 후보만 판정 풀에 포함
     const requiredStatus = CANDIDATE_STATUS_FOR_ROUND[round]
@@ -80,33 +81,54 @@ export const countVotes = onCall({ region: REGION }, async (request) => {
       }))
 
     const thresholds = await loadThresholds(churchId)
+    const totalBallotsByPosition = countBallotsByPosition(ballots) // 제14조① 직분별 분모
+    const positions = (election.positions ?? {}) as Partial<Record<PositionType, PositionQuota>>
     outcome = determineElected({
       candidates: pool,
       tally,
-      totalBallots,
-      positions: (election.positions ?? {}) as Partial<Record<PositionType, PositionQuota>>,
+      totalBallotsByPosition,
+      positions,
       thresholds,
     })
 
     const electedByPosition: Record<string, Record<string, string[]>> = {}
+    let totalSeats = 0
+    let totalElected = 0
     for (const [position, byGender] of Object.entries(outcome)) {
       electedByPosition[position] = {}
       for (const [gender, seat] of Object.entries(byGender)) {
+        const quota = positions[position as PositionType]
+        totalSeats += quota?.[gender as Gender] ?? 0
+        totalElected += seat.elected.length
         electedByPosition[position][gender] = seat.elected
         for (const id of seat.elected) {
           batch.update(base.collection('candidates').doc(id), { status: 'elected' })
         }
-        for (const id of seat.notElected) {
-          batch.update(base.collection('candidates').doc(id), {
-            status: round === 'first' ? 'second_qualified' : 'not_elected',
-          })
+        if (round === 'first') {
+          // 제9조③: 미달 시 미달 인원의 2배수만 2차 투표 대상으로 공천 (득표순)
+          const secondPool = seat.deficit > 0 ? seat.notElected.slice(0, seat.deficit * 2) : []
+          const secondPoolSet = new Set(secondPool)
+          for (const id of seat.notElected) {
+            batch.update(base.collection('candidates').doc(id), {
+              status: secondPoolSet.has(id) ? 'second_qualified' : 'not_elected',
+            })
+          }
+        } else {
+          for (const id of seat.notElected) {
+            batch.update(base.collection('candidates').doc(id), { status: 'not_elected' })
+          }
         }
       }
     }
 
+    // 제9조③ 단서: 예정인원의 70% 이상 선출 시 2차 투표 생략 가능 (선관위 판단 참고용)
+    secondRoundOptional =
+      round === 'first' && totalSeats > 0 ? totalElected >= totalSeats * 0.7 : null
+
     batch.update(base, {
       [`results.${round}`]: {
         total_ballots: totalBallots,
+        ballots_by_position: totalBallotsByPosition,
         counted_at: FieldValue.serverTimestamp(),
         elected: electedByPosition,
       },
@@ -120,5 +142,5 @@ export const countVotes = onCall({ region: REGION }, async (request) => {
     details: { round, totalBallots },
   })
 
-  return { totalBallots, tally, outcome }
+  return { totalBallots, tally, outcome, secondRoundOptional }
 })

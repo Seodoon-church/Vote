@@ -101,11 +101,17 @@ describe('assessVoter — 선거인 자격', () => {
     expect(yearOnly.eligible).toBe(true)
   })
 
-  it('등록 6개월 미만은 부적격, 등록일 미상은 warning으로 통과', () => {
+  it('등록기간은 규정(제3조)에 없어 기본값에서 판정하지 않는다', () => {
     const recent = assessVoter(member({ registration_date: '2026-07-01' }), RULES.voter, TODAY)
+    expect(recent.eligible).toBe(true)
+  })
+
+  it('테넌트가 등록기간 규칙을 켜면(minAttendanceMonths>0) 판정한다', () => {
+    const rule = { ...RULES.voter, minAttendanceMonths: 6 }
+    const recent = assessVoter(member({ registration_date: '2026-07-01' }), rule, TODAY)
     expect(recent.eligible).toBe(false)
 
-    const unknown = assessVoter(member({ registration_date: undefined }), RULES.voter, TODAY)
+    const unknown = assessVoter(member({ registration_date: undefined }), rule, TODAY)
     expect(unknown.eligible).toBe(true)
     expect(unknown.warnings[0]).toContain('등록일')
   })
@@ -116,10 +122,13 @@ describe('assessVoter — 선거인 자격', () => {
     expect(result.reasons[0]).toContain('치리')
   })
 
-  it('voterType: 기존 항존직을 구분한다 (공천투표 참여 자격용)', () => {
+  it('voterType: 기존 항존직을 구분하며 은퇴 항존직도 포함한다 (제8조① 공천투표 참여)', () => {
     expect(resolveVoterType(member({ detailed_position: '시무장로' }))).toBe('elder')
+    expect(resolveVoterType(member({ detailed_position: '협동장로' }))).toBe('elder')
     expect(resolveVoterType(member({ detailed_position: '안수집사' }))).toBe('deacon')
+    expect(resolveVoterType(member({ detailed_position: '은퇴안수집사' }))).toBe('deacon')
     expect(resolveVoterType(member({ detailed_position: '시무권사' }))).toBe('kwansa')
+    expect(resolveVoterType(member({ detailed_position: '은퇴권사' }))).toBe('kwansa')
     expect(resolveVoterType(member())).toBe('member')
   })
 })
@@ -185,7 +194,7 @@ describe('assessCandidate — 후보자 자격 (성별 규칙)', () => {
     expect(tooOld.eligible).toBe(false)
   })
 
-  it('장로 후보 전제 직분: 안수집사·협동안수집사·시무권사·협동권사만', () => {
+  it('장로 후보 전제 직분: 안수집사·권사·협동장로·협동권사 5년 (제4조① — 일반 집사는 불가)', () => {
     const plain = assessCandidate(
       member({ position: '집사', detailed_position: '', service_years: 10 }),
       'elder',
@@ -194,6 +203,68 @@ describe('assessCandidate — 후보자 자격 (성별 규칙)', () => {
     )
     expect(plain.eligible).toBe(false)
     expect(plain.reasons.join()).toContain('전제 직분')
+
+    const coopElder = assessCandidate(
+      member({ detailed_position: '협동장로', service_years: 6 }),
+      'elder',
+      RULES,
+      TODAY
+    )
+    expect(coopElder.eligible).toBe(true)
+  })
+
+  it('안수집사 봉사 경로: 집사 5년 또는 협동안수집사 3년 (제4조② 복수 경로)', () => {
+    // 집사 4년 → 미달
+    const shortDeacon = assessCandidate(
+      member({ birth_date: '1980-01-01', position: '집사', service_years: 4 }),
+      'deacon',
+      RULES,
+      TODAY
+    )
+    expect(shortDeacon.eligible).toBe(false)
+    expect(shortDeacon.reasons.join()).toContain('봉사 5년 미만')
+
+    // 협동안수집사 4년 → 3년 경로 충족
+    const coopPath = assessCandidate(
+      member({
+        birth_date: '1980-01-01',
+        position: '',
+        detailed_position: '협동안수집사',
+        service_years: 4,
+      }),
+      'deacon',
+      RULES,
+      TODAY
+    )
+    expect(coopPath.eligible).toBe(true)
+  })
+
+  it('국적·유급직원 배제 (제4조④): 데이터 있으면 판정, 없으면 수동확인 warning', () => {
+    const paidStaff = assessCandidate(
+      member({ detailed_position: '안수집사', service_years: 10, is_paid_staff: true }),
+      'elder',
+      RULES,
+      TODAY
+    )
+    expect(paidStaff.eligible).toBe(false)
+    expect(paidStaff.reasons.join()).toContain('유급 직원')
+
+    const foreign = assessCandidate(
+      member({ detailed_position: '안수집사', service_years: 10, nationality: '미국' }),
+      'elder',
+      RULES,
+      TODAY
+    )
+    expect(foreign.eligible).toBe(false)
+
+    const unknown = assessCandidate(
+      member({ detailed_position: '안수집사', service_years: 10 }),
+      'elder',
+      RULES,
+      TODAY
+    )
+    expect(unknown.eligible).toBe(true)
+    expect(unknown.warnings.join()).toContain('제4조④')
   })
 
   it('세례연수 미달은 부적격, 데이터 없으면 warning으로 통과', () => {
