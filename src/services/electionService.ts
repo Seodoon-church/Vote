@@ -197,6 +197,44 @@ export async function addCandidate(
   })
 }
 
+/** 자격자 일괄 후보 등록 — 공천투표 풀 구성용 (규정 제8조①) */
+export async function addCandidatesBulk(
+  electionId: string,
+  list: { member_id: string; name: string; position_type: PositionType; gender: Gender }[]
+): Promise<void> {
+  const CHUNK = 400
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const batch = writeBatch(db)
+    for (const candidate of list.slice(i, i + CHUNK)) {
+      batch.set(doc(subCol(electionId, 'candidates')), {
+        ...candidate,
+        status: 'nominated',
+        nomination_vote_count: 0,
+        first_round_vote_count: 0,
+        second_round_vote_count: 0,
+        nominated_at: Timestamp.now(),
+      })
+    }
+    await batch.commit()
+  }
+}
+
+/** 후보 상태 일괄 변경 — 공천 확정(2배수) 등 */
+export async function updateCandidateStatusBulk(
+  electionId: string,
+  candidateIds: string[],
+  status: CandidateStatus
+): Promise<void> {
+  const CHUNK = 400
+  for (let i = 0; i < candidateIds.length; i += CHUNK) {
+    const batch = writeBatch(db)
+    for (const id of candidateIds.slice(i, i + CHUNK)) {
+      batch.update(doc(subCol(electionId, 'candidates'), id), { status })
+    }
+    await batch.commit()
+  }
+}
+
 export async function removeCandidate(electionId: string, candidateId: string): Promise<void> {
   await deleteDoc(doc(subCol(electionId, 'candidates'), candidateId))
 }

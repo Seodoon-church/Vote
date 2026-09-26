@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   callCountVotes,
   listCandidates,
+  updateCandidateStatusBulk,
   type CountVotesResponse,
 } from '@/services/electionService'
 import {
@@ -114,7 +115,13 @@ export function CountTab({ electionId, election }: { electionId: string; electio
           )}
 
           {round === 'nomination' ? (
-            <NominationResult tally={result.tally} candidates={candidates} />
+            <NominationResult
+              electionId={electionId}
+              election={election}
+              tally={result.tally}
+              candidates={candidates}
+              onDone={reload}
+            />
           ) : (
             result.outcome &&
             Object.entries(result.outcome).map(([positionKey, byGender]) => (
@@ -175,49 +182,144 @@ export function CountTab({ electionId, election }: { electionId: string; electio
   )
 }
 
-/** 공천투표 결과 — 득표순 정렬만 제공, 2배수 공천 확정은 선관위 수동 (제8조①④) */
+/** 공천투표 결과 — 득표순 표시 + 정원 2배수 공천 확정 (규정 제8조①④) */
 function NominationResult({
+  electionId,
+  election,
   tally,
   candidates,
+  onDone,
 }: {
+  electionId: string
+  election: Election
   tally: Record<string, number>
   candidates: (Candidate & { id: string })[]
+  onDone: () => Promise<void>
 }) {
+  const [busy, setBusy] = useState(false)
+  const [notices, setNotices] = useState<string[]>([])
+
   const byPosition = new Map<string, (Candidate & { id: string })[]>()
   for (const candidate of candidates) {
     const list = byPosition.get(candidate.position_type) ?? []
     list.push(candidate)
     byPosition.set(candidate.position_type, list)
   }
+
+  /** 성별 몫별 정원×2배수 득표순 확정. 경계 동점 몫은 동점 초과 득표자만 자동 확정하고 수동 판정 안내 */
+  const confirmNomination = async () => {
+    const toQualify: string[] = []
+    const warnings: string[] = []
+
+    for (const [positionKey, quota] of Object.entries(election.positions ?? {})) {
+      const position = positionKey as PositionType
+      for (const gender of ['male', 'female'] as Gender[]) {
+        const seats = quota?.[gender] ?? 0
+        if (seats === 0) continue
+        const limit = seats * 2
+        const pool = candidates
+          .filter(
+            (c) => c.position_type === position && c.gender === gender && c.status === 'nominated'
+          )
+          .map((c) => ({ id: c.id, votes: tally[c.id] ?? 0 }))
+          .sort((a, b) => b.votes - a.votes)
+
+        if (pool.length === 0) continue
+        if (pool.length <= limit) {
+          toQualify.push(...pool.map((p) => p.id))
+          continue
+        }
+        if (pool[limit - 1].votes === pool[limit].votes) {
+          // 경계 동점 — 동점 표수를 초과한 득표자만 자동 확정
+          const safe = pool.filter((p) => p.votes > pool[limit - 1].votes)
+          toQualify.push(...safe.map((p) => p.id))
+          warnings.push(
+            `${POSITION_LABELS[position]}(${GENDER_LABELS[gender]}) ${limit}번째 자리 동점(${pool[limit - 1].votes}표) — 임직일순→연장자순으로 선관위가 수동 판정 후 후보자 탭에서 확정하세요 (제8조④)`
+          )
+        } else {
+          toQualify.push(...pool.slice(0, limit).map((p) => p.id))
+        }
+      }
+    }
+
+    if (toQualify.length === 0) {
+      alert('확정할 후보가 없습니다. 개표를 먼저 실행하세요.')
+      return
+    }
+    if (
+      !confirm(
+        `득표순 상위(정원의 2배수) ${toQualify.length}명을 공천 확정(1차 투표 대상)으로 전환할까요?` +
+          (warnings.length ? `\n\n⚠️ 동점 수동 판정 필요 ${warnings.length}건 있음` : '')
+      )
+    )
+      return
+
+    setBusy(true)
+    try {
+      await updateCandidateStatusBulk(electionId, toQualify, 'qualified')
+      setNotices(warnings)
+      await onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div>
-      {[...byPosition.entries()].map(([positionKey, list]) => (
-        <div key={positionKey} className="mb-4">
-          <h3 className="mb-2 text-sm font-bold">
-            {POSITION_LABELS[positionKey as PositionType]} — 공천 득표순
-          </h3>
-          <table className="w-full text-sm">
-            <tbody>
-              {list
-                .sort((a, b) => (tally[b.id] ?? 0) - (tally[a.id] ?? 0))
-                .map((candidate) => (
-                  <tr key={candidate.id} className="border-t border-slate-50">
-                    <td className="py-1">
-                      {candidate.name}
-                      <span className="ml-1 text-xs text-slate-400">
-                        ({GENDER_LABELS[candidate.gender]})
-                      </span>
-                    </td>
-                    <td className="text-right font-mono">{tally[candidate.id] ?? 0}표</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+      {[...byPosition.entries()].map(([positionKey, list]) => {
+        const quota = election.positions?.[positionKey as PositionType]
+        const doubled = ((quota?.male ?? 0) + (quota?.female ?? 0)) * 2
+        return (
+          <div key={positionKey} className="mb-4">
+            <h3 className="mb-2 text-sm font-bold">
+              {POSITION_LABELS[positionKey as PositionType]} — 공천 득표순{' '}
+              <span className="font-normal text-slate-400">
+                (확정 정원: 남 {(quota?.male ?? 0) * 2}·여 {(quota?.female ?? 0) * 2} = 총{' '}
+                {doubled}명)
+              </span>
+            </h3>
+            <table className="w-full text-sm">
+              <tbody>
+                {list
+                  .sort((a, b) => (tally[b.id] ?? 0) - (tally[a.id] ?? 0))
+                  .map((candidate) => (
+                    <tr key={candidate.id} className="border-t border-slate-50">
+                      <td className="py-1">
+                        {candidate.name}
+                        <span className="ml-1 text-xs text-slate-400">
+                          ({GENDER_LABELS[candidate.gender]})
+                        </span>
+                        {candidate.status === 'qualified' && (
+                          <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700">
+                            공천 확정
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-right font-mono">{tally[candidate.id] ?? 0}표</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
+
+      {notices.map((notice) => (
+        <p key={notice} className="mb-2 rounded bg-amber-50 p-2 text-xs text-amber-700">
+          ⚠️ {notice}
+        </p>
       ))}
-      <p className="text-xs text-slate-400">
-        공천 확정(정원의 2배수)은 득표순 → 임직일순 → 연장자순으로 선관위가 평가·결의 후
-        후보자 탭에서 &quot;공천 확정&quot; 상태로 변경하세요 (규정 제8조).
+
+      <button
+        disabled={busy}
+        onClick={confirmNomination}
+        className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50 print:hidden"
+      >
+        {busy ? '처리 중…' : '공천 확정 — 성별 몫별 정원 2배수 자동 선정'}
+      </button>
+      <p className="mt-2 text-xs text-slate-400">
+        공천 순위 규칙: 득표순 → 임직일순 → 연장자순 (규정 제8조④). 동점 몫은 자동 확정에서
+        제외되며 후보자 탭에서 수동 확정합니다. 확정 후 개요 탭에서 1차투표로 전환하세요.
       </p>
     </div>
   )

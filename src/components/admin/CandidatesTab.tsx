@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   addCandidate,
+  addCandidatesBulk,
   fetchAllMembers,
   listCandidates,
   removeCandidate,
@@ -206,6 +207,57 @@ export function CandidatesTab({
           </button>
         ) : (
           <>
+            <div className="mb-3 rounded-xl bg-slate-50 p-3">
+              <p className="mb-2 text-xs text-slate-500">
+                공천투표 풀 구성 (규정 제8조①): 선택한 직분의 자격 충족자 전원을 공천 후보로
+                일괄 등록합니다. 이후 항존직 공천투표 → 개표 → 2배수 공천 확정 순으로
+                진행합니다.
+              </p>
+              <button
+                disabled={busy}
+                onClick={async () => {
+                  const today = new Date()
+                  const existing = new Set(
+                    candidates
+                      .filter((c) => c.position_type === position)
+                      .map((c) => c.member_id)
+                  )
+                  const eligible = members.filter((member) => {
+                    if (existing.has(member.id) || !mapGender(member.gender)) return false
+                    return assessCandidate(member, position, DEFAULT_ELECTION_RULES, today)
+                      .eligible
+                  })
+                  if (eligible.length === 0) {
+                    alert('신규 등록할 자격 충족자가 없습니다.')
+                    return
+                  }
+                  if (
+                    !confirm(
+                      `${POSITION_LABELS[position]} 자격 충족자 ${eligible.length}명을 공천 후보로 일괄 등록할까요?`
+                    )
+                  )
+                    return
+                  setBusy(true)
+                  try {
+                    await addCandidatesBulk(
+                      electionId,
+                      eligible.map((member) => ({
+                        member_id: member.id,
+                        name: member.name,
+                        position_type: position,
+                        gender: mapGender(member.gender)!,
+                      }))
+                    )
+                    await reload()
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {busy ? '처리 중…' : `${POSITION_LABELS[position]} 자격자 전체 일괄 등록`}
+              </button>
+            </div>
             <div className="mb-3 flex gap-2">
               <select
                 className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
