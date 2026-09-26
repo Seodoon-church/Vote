@@ -1,0 +1,100 @@
+rules_version = '2';
+
+// ============================================================
+// Vote — 선거/투표 플랫폼 보안 규칙 (churches/{churchId} 테넌트 스코프)
+//
+// ⚠️ 배포 금지: seodoon-church 프로젝트의 실제 룰셋은 seodoon 저장소
+// firestore.rules가 단일 원본이다. 이 파일은 에뮬레이터 검증용 초안이며,
+// 배포 시에는 이 내용을 seodoon/firestore.rules에 병합해 그쪽에서 배포한다.
+// (한 Firebase 프로젝트에는 하나의 룰셋만 존재 — 여기서 deploy하면
+//  기존 전체 규칙이 날아간다)
+//
+// 무기명 원칙: voters(누가 투표했는가) ↔ ballots(무엇을 찍었는가)는
+// vote_seal로만 연결되며, ballots는 클라이언트 접근 전면 금지(Functions 전용).
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // 교회 관리자 — seodoon 본 룰셋 병합 시 기존 isAdmin() 헬퍼로 대체 예정
+    function isChurchAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['최고관리자', '관리자'];
+    }
+
+    // 선거관리위원 — 해당 선거의 committees/{uid} 문서 존재 여부
+    function isCommittee(churchId, electionId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/churches/$(churchId)/elections/$(electionId)/committees/$(request.auth.uid));
+    }
+
+    function isElectionManager(churchId, electionId) {
+      return isChurchAdmin() || isCommittee(churchId, electionId);
+    }
+
+    match /churches/{churchId} {
+
+      // 테넌트별 선거 규정 (자격 규칙·피택 기준)
+      match /settings/electionRules {
+        allow read: if isSignedIn();
+        allow write: if isChurchAdmin();
+      }
+
+      match /elections/{electionId} {
+        // 선거 기본 정보(단계·공고·정원)는 로그인 교인 열람 가능
+        allow read: if isSignedIn();
+        allow create, delete: if isChurchAdmin();
+        // 단계 전환·결과·현장키는 Functions 전용 필드
+        allow update: if isElectionManager(churchId, electionId)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['stage', 'results', 'onsite_key_hash', 'closed_at']);
+
+        // 선거관리위원회 구성 — 관리자만 임명/해임
+        match /committees/{uid} {
+          allow read: if isElectionManager(churchId, electionId);
+          allow write: if isChurchAdmin();
+        }
+
+        // 선거인 명부 — 본인 투표 자격/여부 확인은 Functions 경유(명부 노출 방지)
+        match /voters/{voterId} {
+          allow read: if isElectionManager(churchId, electionId);
+          allow create, delete: if isElectionManager(churchId, electionId);
+          // 투표 여부 마킹·직인은 Functions 전용 필드
+          allow update: if isElectionManager(churchId, electionId)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['has_voted_nomination', 'has_voted_first', 'has_voted_second', 'vote_seal']);
+        }
+
+        // 후보자 — 명단은 교인 공개, 득표수·피택 판정은 Functions 전용 필드
+        match /candidates/{candidateId} {
+          allow read: if isSignedIn();
+          allow create, delete: if isElectionManager(churchId, electionId);
+          allow update: if isElectionManager(churchId, electionId)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['nomination_vote_count', 'first_round_vote_count', 'second_round_vote_count']);
+        }
+
+        // 무기명 투표지 — 클라이언트 접근 전면 금지 (Cloud Functions Admin SDK 전용)
+        match /ballots/{ballotId} {
+          allow read, write: if false;
+        }
+
+        // 선거 공고
+        match /announcements/{announcementId} {
+          allow read: if isSignedIn();
+          allow write: if isElectionManager(churchId, electionId);
+        }
+
+        // 감사 로그 — 기록은 Functions 전용, 삭제 절대 불가
+        match /auditLogs/{logId} {
+          allow read: if isElectionManager(churchId, electionId);
+          allow write: if false;
+        }
+      }
+    }
+  }
+}
