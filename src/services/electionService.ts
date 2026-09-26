@@ -88,8 +88,9 @@ export async function updateElectionPeriod(
   })
 }
 
-export async function deleteElection(id: string): Promise<void> {
-  await deleteDoc(electionDoc(id))
+/** 선거 완전 삭제 — 준비중/취소만. 하위 컬렉션(ballots 포함)까지 Function이 정리 */
+export async function callDeleteElectionDeep(electionId: string): Promise<void> {
+  await httpsCallable(functions, 'deleteElectionDeep')({ churchId: CHURCH_ID, electionId })
 }
 
 // ---------- 선관위 ----------

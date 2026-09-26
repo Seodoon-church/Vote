@@ -3,7 +3,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth'
-import { createElection, deleteElection, listElections } from '@/services/electionService'
+import {
+  callDeleteElectionDeep,
+  createElection,
+  listElections,
+} from '@/services/electionService'
 import type { Election, PositionQuota, PositionType } from '@/types/election'
 import { POSITION_LABELS, STAGE_LABELS } from '@/types/election'
 
@@ -59,13 +63,22 @@ export default function AdminHomePage() {
   }
 
   const handleDelete = async (election: Election) => {
-    if (election.stage !== 'preparing') {
-      alert('준비 단계의 선거만 삭제할 수 있습니다.')
+    if (election.stage !== 'preparing' && election.stage !== 'cancelled') {
+      alert('준비중 또는 취소된 선거만 삭제할 수 있습니다. 진행 중인 선거는 먼저 취소하세요.')
       return
     }
-    if (!confirm(`"${election.name}" 선거를 삭제할까요?`)) return
-    await deleteElection(election.id!)
-    await reload()
+    if (
+      !confirm(
+        `"${election.name}" 선거를 완전히 삭제할까요?\n명부·후보·투표지 등 하위 데이터가 모두 삭제되며 되돌릴 수 없습니다.`
+      )
+    )
+      return
+    try {
+      await callDeleteElectionDeep(election.id!)
+      await reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '삭제에 실패했습니다.')
+    }
   }
 
   return (

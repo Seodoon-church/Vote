@@ -43,6 +43,14 @@ export async function getElectionOrThrow(churchId: string, electionId: string) {
   return snap
 }
 
+/** 교회 관리자인지 검증 (선관위 불포함 — 선거 생성/삭제 등 관리자 전용 작업) */
+export async function assertChurchAdmin(uid: string): Promise<void> {
+  const userSnap = await db().doc(`users/${uid}`).get()
+  if (!userSnap.exists || !ADMIN_ROLES.includes(userSnap.get('role'))) {
+    throw new HttpsError('permission-denied', '교회 관리자 권한이 없습니다.')
+  }
+}
+
 /** 교회 관리자 또는 해당 선거 선관위원인지 검증 */
 export async function assertElectionManager(
   churchId: string,
