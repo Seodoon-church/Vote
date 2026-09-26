@@ -125,6 +125,7 @@ churches/{churchId}/
 | 2026-09-26 | 2단계 | Cloud Functions 코어(`functions/src/election/`): submitBallot(무기명 트랜잭션)·countVotes(성별 몫 독립 피택 판정)·advanceStage·generateOnsiteKey. 집계 순수로직 단위테스트 10개 |
 | 2026-09-26 | 3단계 | 자격 엔진(`src/lib/qualification.ts`): 성별 규칙 포함 선거인/후보 판정, 테넌트 설정형(VoterRule·PositionRule 확장). 데이터 미비=warnings 통과 정책. 단위테스트 18개 |
 | 2026-09-26 | 규정 반영 | 항존직선거규정(2024-02-04) 대조 7건 수정: ServicePath 복수 봉사경로, 은퇴 항존직 공천 참여, 직분별 개표 분모, 2차=미달×2배수+70% 생략 플래그, 국적·유급직원 배제, 등록기간 기본 0. 정원 확정 남8/여2. 테스트 33개 |
+| 2026-09-26 | 4단계 | 선관위 관리자 화면: `/admin`(로그인+목록/생성), `/admin/[id]` 5탭(개요·선관위·선거인·후보자·개표). 자격 엔진 연동 일괄 명부등록, 현장키 1회 표시, 개표 결과 인쇄. 컴포넌트 `src/components/admin/` |
 
 ### Functions 메모
 - codebase = `vote` (seodoon 기본 codebase와 분리 — 배포해도 기존 함수에 영향 없음)
