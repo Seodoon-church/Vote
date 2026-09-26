@@ -114,8 +114,16 @@ churches/{churchId}/
 | 날짜 | 단계 | 내용 |
 |---|---|---|
 | 2026-09-26 | 0~1단계 | Next.js 16 스캐폴드 + Firebase 연결 + 도메인 모델(`src/types/election.ts`) + firestore.rules 초안 + rules 유닛테스트 |
+| 2026-09-26 | 2단계 | Cloud Functions 코어(`functions/src/election/`): submitBallot(무기명 트랜잭션)·countVotes(성별 몫 독립 피택 판정)·advanceStage·generateOnsiteKey. 집계 순수로직 단위테스트 10개 |
+| 2026-09-26 | 3단계 | 자격 엔진(`src/lib/qualification.ts`): 성별 규칙 포함 선거인/후보 판정, 테넌트 설정형(VoterRule·PositionRule 확장). 데이터 미비=warnings 통과 정책. 단위테스트 18개 |
+
+### Functions 메모
+- codebase = `vote` (seodoon 기본 codebase와 분리 — 배포해도 기존 함수에 영향 없음)
+- 피택 기준: `inclusive` 구분 — 장로 2/3 **이상**, 집사·권사 과반(**초과**). 테넌트 규정(`settings/electionRules`)이 기본값 오버라이드
+- 정원 경계 동점은 `tieAtBoundary`로 표시만 하고 자동 확정하지 않는다 (선관위 수동 판정)
+- 공천(nomination) 집계는 득표수만 기록 — 공천 확정(qualified)은 선관위 수동 (공천 인원 규정 미확정)
 
 ### 다음 단계 (seodoon/docs/PLAN.md 기준)
-- 2단계: Cloud Functions 코어 (submitBallot·countVotes·advanceStage)
 - 3단계: 자격 엔진 (성별 포함, 테넌트 설정형)
+- 4단계: 관리자 화면 / 5단계: 현장 투표 화면
 - 미결: 장로 정원 확정 숫자(남/여 배분), 항존직선거규정 원문 확보

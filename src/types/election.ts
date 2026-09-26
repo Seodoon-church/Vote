@@ -27,10 +27,11 @@ export interface PositionQuota {
   female: number
 }
 
-/** 피택 기준 분수 — 장로 2/3, 안수집사·권사 1/2 */
+/** 피택 기준 분수 — inclusive=true면 "이상"(장로 2/3 이상), false면 "초과"(과반수) */
 export interface ElectionThreshold {
   numerator: number
   denominator: number
+  inclusive: boolean
 }
 
 export interface Election {
@@ -145,15 +146,23 @@ export interface PositionRule {
   minServiceYears: number
   minAttendanceRate: number // 0~1
   minTitheRate: number // 0~1
+  /** 후보 전제 현재 직분 — position 또는 detailed_position이 목록에 있으면 충족 */
+  eligibleCurrentPositions: string[]
   threshold: ElectionThreshold
 }
 
+export interface VoterRule {
+  minAge: number
+  requireBaptism: boolean
+  minAttendanceMonths: number
+  /** 선거인 대상 교인 분류 (members.member_classification) — 빈 값이면 제한 없음 */
+  memberClassification?: string
+  /** 치리 중인 교인 배제 */
+  excludeUnderDiscipline: boolean
+}
+
 export interface ElectionRules {
-  voter: {
-    minAge: number
-    requireBaptism: boolean
-    minAttendanceMonths: number
-  }
+  voter: VoterRule
   positions: Record<PositionType, PositionRule>
 }
 
@@ -163,6 +172,8 @@ export const DEFAULT_ELECTION_RULES: ElectionRules = {
     minAge: 18,
     requireBaptism: true,
     minAttendanceMonths: 6,
+    memberClassification: '서둔출석성도',
+    excludeUnderDiscipline: true,
   },
   positions: {
     elder: {
@@ -173,7 +184,8 @@ export const DEFAULT_ELECTION_RULES: ElectionRules = {
       minServiceYears: 5,
       minAttendanceRate: 0.7,
       minTitheRate: 0.7,
-      threshold: { numerator: 2, denominator: 3 },
+      eligibleCurrentPositions: ['안수집사', '협동안수집사', '시무권사', '협동권사'],
+      threshold: { numerator: 2, denominator: 3, inclusive: true }, // 2/3 이상
     },
     deacon: {
       gender: 'male',
@@ -183,7 +195,8 @@ export const DEFAULT_ELECTION_RULES: ElectionRules = {
       minServiceYears: 5,
       minAttendanceRate: 0.7,
       minTitheRate: 0.7,
-      threshold: { numerator: 1, denominator: 2 },
+      eligibleCurrentPositions: ['집사'],
+      threshold: { numerator: 1, denominator: 2, inclusive: false }, // 과반(초과)
     },
     kwansa: {
       gender: 'female',
@@ -193,7 +206,8 @@ export const DEFAULT_ELECTION_RULES: ElectionRules = {
       minServiceYears: 5,
       minAttendanceRate: 0.7,
       minTitheRate: 0.7,
-      threshold: { numerator: 1, denominator: 2 },
+      eligibleCurrentPositions: ['집사'],
+      threshold: { numerator: 1, denominator: 2, inclusive: false }, // 과반(초과)
     },
   },
 }
