@@ -9,13 +9,17 @@
       "Bash(npx tsc:*)",
       "Bash(npx vitest:*)",
       "Bash(firebase emulators:*)",
+      "Bash(firebase deploy --only functions*)",
+      "Bash(firebase deploy --only hosting*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git add:*)"
     ],
     "deny": [
-      "Bash(firebase deploy:*)",
+      "Bash(firebase deploy --only firestore*)",
+      "Bash(firebase deploy --except:*)",
+      "Bash(firebase deploy)",
       "Bash(git push --force:*)",
       "Bash(git reset --hard:*)",
       "Bash(rm -rf:*)"

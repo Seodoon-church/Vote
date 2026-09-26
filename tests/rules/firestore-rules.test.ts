@@ -1,6 +1,8 @@
 /** @vitest-environment node */
 // firestore.rules 에뮬레이터 검증 — 실행: npm run test:rules
 // (firebase emulators:exec가 Firestore 에뮬레이터를 띄운 상태에서 돌아간다)
+// RULES_FILE 환경변수로 다른 룰셋 검증 가능 — seodoon 병합본 검증:
+//   RULES_FILE=../seodoon/firestore.rules npm run test:rules
 import {
   initializeTestEnvironment,
   assertFails,
@@ -25,7 +27,7 @@ beforeAll(async () => {
   env = await initializeTestEnvironment({
     projectId: 'vote-rules-test',
     firestore: {
-      rules: readFileSync('firestore.rules', 'utf8'),
+      rules: readFileSync(process.env.RULES_FILE ?? 'firestore.rules', 'utf8'),
       host: '127.0.0.1',
       port: 8092,
     },
@@ -40,8 +42,9 @@ beforeEach(async () => {
   await env.clearFirestore()
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
-    await db.doc('users/admin-uid').set({ role: '최고관리자' })
-    await db.doc('users/member-uid').set({ role: '교인' })
+    // churchId는 seodoon 병합 룰셋의 belongsToChurch 폴백(users 문서) 대응
+    await db.doc('users/admin-uid').set({ role: '최고관리자', churchId: CHURCH })
+    await db.doc('users/member-uid').set({ role: '교인', churchId: CHURCH })
     await db.doc(BASE).set({ name: '2027년 항존직 선거', year: 2027, stage: 'preparing' })
     await db.doc(`${BASE}/committees/committee-uid`).set({ name: '위원', role: 'member' })
     await db.doc(`${BASE}/voters/v1`).set({ name: '홍길동', gender: 'male', has_voted_first: false })
