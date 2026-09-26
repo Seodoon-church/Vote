@@ -75,6 +75,19 @@ export async function updateElectionName(id: string, name: string): Promise<void
   await updateDoc(electionDoc(id), { name, updated_at: Timestamp.now() })
 }
 
+/** 진행 중 라운드의 투표 기간만 갱신 (단계 전환 없이) — stage 등 보호 필드는 규칙상 불가 */
+export async function updateElectionPeriod(
+  id: string,
+  roundStartAt: Date | null,
+  roundEndAt: Date | null
+): Promise<void> {
+  await updateDoc(electionDoc(id), {
+    round_start_at: roundStartAt ? Timestamp.fromDate(roundStartAt) : null,
+    round_end_at: roundEndAt ? Timestamp.fromDate(roundEndAt) : null,
+    updated_at: Timestamp.now(),
+  })
+}
+
 export async function deleteElection(id: string): Promise<void> {
   await deleteDoc(electionDoc(id))
 }

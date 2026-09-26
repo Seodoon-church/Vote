@@ -1,7 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { callAdvanceStage, callGenerateOnsiteKey } from '@/services/electionService'
+import {
+  callAdvanceStage,
+  callGenerateOnsiteKey,
+  updateElectionPeriod,
+} from '@/services/electionService'
 import type { Election, ElectionStage, PositionType } from '@/types/election'
 import { POSITION_LABELS, STAGE_LABELS } from '@/types/election'
 
@@ -138,6 +142,37 @@ export function OverviewTab({
         <p className="mt-2 text-xs text-slate-400">
           기간을 입력하면 해당 라운드의 투표 가능 시간이 서버 시각 기준으로 강제됩니다.
         </p>
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="mb-1 text-xs text-slate-500">
+            현재 설정: 시작{' '}
+            {election.round_start_at ? election.round_start_at.toDate().toLocaleString('ko-KR') : '제한 없음'}{' '}
+            · 마감{' '}
+            {election.round_end_at ? election.round_end_at.toDate().toLocaleString('ko-KR') : '제한 없음'}
+          </p>
+          <button
+            disabled={busy}
+            onClick={async () => {
+              if (!confirm('입력된 기간으로 저장할까요? (비워두면 시간 제한 없음)')) return
+              setBusy(true)
+              setError('')
+              try {
+                await updateElectionPeriod(
+                  electionId,
+                  roundStartAt ? new Date(roundStartAt) : null,
+                  roundEndAt ? new Date(roundEndAt) : null
+                )
+                await onChanged()
+              } catch (e) {
+                setError(e instanceof Error ? e.message : '기간 저장에 실패했습니다.')
+              } finally {
+                setBusy(false)
+              }
+            }}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+          >
+            기간만 저장 (단계 전환 없이)
+          </button>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
