@@ -79,6 +79,10 @@ export const submitBallot = onCall({ region: REGION }, async (request) => {
   if (voterSnap.get('is_eligible') === false) {
     throw new HttpsError('permission-denied', '선거권이 없습니다.')
   }
+  // 공천투표는 항존직(은퇴 포함)만 참여 (규정 제8조①)
+  if (round === 'nomination' && !['elder', 'deacon', 'kwansa'].includes(voterSnap.get('voter_type'))) {
+    throw new HttpsError('permission-denied', '공천투표는 항존직(은퇴 포함)만 참여할 수 있습니다.')
+  }
 
   // 5. 선택 내용 검증 — 정원 초과·중복·후보 상태 확인
   const positions = (election.positions ?? {}) as Partial<Record<PositionType, PositionQuota>>

@@ -1,7 +1,8 @@
 'use client'
 
-import { use, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { getElection } from '@/services/electionService'
 import type { Election } from '@/types/election'
 import { STAGE_LABELS } from '@/types/election'
@@ -21,17 +22,17 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key']
 
-export default function ElectionDetailPage({
-  params,
-}: {
-  params: Promise<{ electionId: string }>
-}) {
-  const { electionId } = use(params)
+function ElectionDetail() {
+  const electionId = useSearchParams().get('id') ?? ''
   const [election, setElection] = useState<Election | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [tab, setTab] = useState<TabKey>('overview')
 
   const reload = useCallback(async () => {
+    if (!electionId) {
+      setNotFound(true)
+      return
+    }
     const data = await getElection(electionId)
     if (data) setElection(data)
     else setNotFound(true)
@@ -57,7 +58,7 @@ export default function ElectionDetailPage({
 
   return (
     <div>
-      <div className="mb-4">
+      <div className="mb-4 print:hidden">
         <Link href="/admin" className="text-xs text-slate-400 hover:text-slate-600">
           ← 선거 목록
         </Link>
@@ -69,7 +70,7 @@ export default function ElectionDetailPage({
         </div>
       </div>
 
-      <nav className="mb-5 flex gap-1 border-b border-slate-200">
+      <nav className="mb-5 flex gap-1 border-b border-slate-200 print:hidden">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
@@ -93,5 +94,13 @@ export default function ElectionDetailPage({
       {tab === 'candidates' && <CandidatesTab electionId={electionId} election={election} />}
       {tab === 'count' && <CountTab electionId={electionId} election={election} />}
     </div>
+  )
+}
+
+export default function ElectionDetailPage() {
+  return (
+    <Suspense fallback={<p className="text-slate-400">불러오는 중…</p>}>
+      <ElectionDetail />
+    </Suspense>
   )
 }

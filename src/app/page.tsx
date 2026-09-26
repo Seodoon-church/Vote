@@ -14,9 +14,12 @@ export default function HomePage() {
           >
             선거 관리 (선관위)
           </Link>
-          <div className="block w-full rounded-xl bg-slate-100 py-3 text-slate-400 font-medium cursor-not-allowed">
-            투표 참여 (준비 중)
-          </div>
+          <Link
+            href="/vote"
+            className="block w-full rounded-xl border border-slate-300 py-3 font-medium hover:bg-slate-50 transition"
+          >
+            투표 참여
+          </Link>
         </div>
       </div>
     </main>

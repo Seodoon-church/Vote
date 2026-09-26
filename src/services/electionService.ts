@@ -270,3 +270,32 @@ export async function callCountVotes(
   })
   return result.data as CountVotesResponse
 }
+
+export interface VoterStatus {
+  registered: boolean
+  name?: string | null
+  voterType?: string | null
+  eligible?: boolean
+  hasVoted?: Record<VoteRound, boolean>
+}
+
+export async function callGetVoterStatus(electionId: string): Promise<VoterStatus> {
+  const result = await httpsCallable(functions, 'getVoterStatus')({
+    churchId: CHURCH_ID,
+    electionId,
+  })
+  return result.data as VoterStatus
+}
+
+export async function callSubmitBallot(params: {
+  electionId: string
+  round: VoteRound
+  selections: Partial<Record<PositionType, Partial<Record<Gender, string[]>>>>
+  onsiteKey?: string
+}): Promise<string> {
+  const result = await httpsCallable(functions, 'submitBallot')({
+    churchId: CHURCH_ID,
+    ...params,
+  })
+  return (result.data as { voteSeal: string }).voteSeal
+}

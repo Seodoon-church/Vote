@@ -74,6 +74,7 @@ export function VotersTab({ electionId }: { electionId: string }) {
           member_id: a.member.id,
           name: a.member.name,
           gender: mapGender(a.member.gender)!,
+          voter_type: a.voterType as Voter['voter_type'],
           is_eligible: true,
           has_voted_nomination: false,
           has_voted_first: false,

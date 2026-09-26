@@ -160,7 +160,7 @@ export default function AdminHomePage() {
               key={election.id}
               className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
             >
-              <Link href={`/admin/${election.id}`} className="flex-1">
+              <Link href={`/admin/election?id=${election.id}`} className="flex-1">
                 <p className="font-medium">{election.name}</p>
                 <p className="text-xs text-slate-500">
                   {STAGE_LABELS[election.stage]} ·{' '}

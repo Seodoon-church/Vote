@@ -80,6 +80,8 @@ export interface Voter {
   uid?: string
   name: string
   gender: Gender
+  /** 기존 항존직 구분 — 공천투표 참여 자격 판정 (제8조①, 은퇴 포함) */
+  voter_type?: 'elder' | 'deacon' | 'kwansa' | 'member'
   is_eligible: boolean
   ineligibility_reason?: string
   // 아래 필드는 Functions 전용 (rules로 클라이언트 수정 차단)
